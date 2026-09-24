@@ -39,7 +39,9 @@
         </div>
       </CardHeader>
       <CardContent class="space-y-5">
-        <div class="flex items-center justify-between gap-6">
+        <div
+          class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+        >
           <div class="min-w-0">
             <div class="font-medium">
               {{ $t("settings.visualizer_enabled.label") }}
@@ -48,12 +50,26 @@
               {{ $t("settings.visualizer_enabled.description") }}
             </div>
           </div>
-          <Switch
-            :model-value="enabledPref"
+          <Select
+            :model-value="modePref"
             @update:model-value="
-              (v: boolean) => setPref('visualizer_enabled', v)
+              (v: unknown) =>
+                void setVisualizerModeForPlayer(undefined, v as VisualizerMode)
             "
-          />
+          >
+            <SelectTrigger class="w-full shrink-0 sm:w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="mode in VISUALIZER_MODES"
+                :key="mode"
+                :value="mode"
+              >
+                {{ $t(`visualizer.mode_options.${mode}`) }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div
@@ -347,9 +363,14 @@ import { Switch } from "@/components/ui/switch";
 import { useUserPreferences } from "@/composables/userPreferences";
 import {
   VISUALIZER_BLUR_DEFAULT,
+  VISUALIZER_MODES,
   VISUALIZER_OPACITY_DEFAULT,
+  type VisualizerMode,
 } from "@/composables/visualizer/state";
-import { expertModeSetting } from "@/helpers/expert_mode";
+import {
+  setVisualizerModeForPlayer,
+  visualizerModeForPlayer,
+} from "@/composables/visualizer/useVisualizer";
 import { listPresetNames } from "@/helpers/visualizer/presetLibrary";
 import {
   DEFAULT_QUALITY,
@@ -362,7 +383,8 @@ const QUALITY_TIERS = Object.keys(QUALITY_PROFILES);
 const PRESET_MODES = ["random", "random_favorites", "fixed"];
 
 const { getPreference, setPreference } = useUserPreferences();
-const enabledPref = computed(() => expertModeSetting("visualizer_enabled"));
+// the default for players never switched individually
+const modePref = computed(() => visualizerModeForPlayer());
 const qualityPref = getPreference<string>(
   "visualizer_quality",
   DEFAULT_QUALITY,

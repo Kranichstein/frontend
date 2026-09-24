@@ -679,8 +679,8 @@
         "protocol_native_badge": "Nativ",
         "visualizer_description": "Einstellungen, Voreinstellungen und Favoriten für den MilkDrop-Musikvisualizer",
         "visualizer_enabled": {
-            "label": "MilkDrop-Visualizer",
-            "description": "Im Hintergrund des Vollbildplayers wird ein MilkDrop-Visualizer angezeigt, der live auf die Musik reagiert. Jedes Wiedergabegerät kann dies über sein Vollbildmenü deaktivieren. Die Wellenform wird aus dem Sendspin-Stream abgerufen und steht daher nur Wiedergabegeräten mit Sendspin-Ausgang zur Verfügung."
+            "label": "Visualizer",
+            "description": "Im Hintergrund des Vollbildplayers wird ein Visualizer angezeigt, der live auf die Musik reagiert: MilkDrop-Voreinstellungen oder ein LED-Spektrumanalysator. Jedes Wiedergabegerät kann dies über sein Vollbildmenü ändern. Die Wellenform wird aus dem Sendspin-Stream abgerufen und steht daher nur Wiedergabegeräten mit Sendspin-Ausgang zur Verfügung."
         },
         "visualizer_blur": {
             "label": "Visualizer-Unschärfe",
@@ -2301,6 +2301,13 @@
     "mark_played_partial_failure": "Die {0} Folge(n) konnten nicht aktualisiert werden.",
     "visualizer": {
         "title": "MilkDrop",
+        "mode": "Visualizer-Modus",
+        "delay": "Verzögerung (für Audio-Latenz am Gerät)",
+        "mode_options": {
+            "off": "Aus",
+            "milkdrop": "MilkDrop",
+            "spectrum": "Spektrum"
+        },
         "preset_random": "Zufällige Voreinstellung",
         "toggle": "Den MilkDrop-Visualizer ein- oder ausschalten",
         "preset_random_favorites": "Zufällige Auswahl aus den Favoriten",

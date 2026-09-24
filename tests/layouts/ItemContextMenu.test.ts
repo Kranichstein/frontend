@@ -157,7 +157,7 @@ describe("ItemContextMenu", () => {
     await nextTick();
 
     // menuItemLabel resolves the label through the real i18n catalog
-    expect(wrapper.text()).toContain("MilkDrop visualizer");
+    expect(wrapper.text()).toContain("Visualizer");
     expect(wrapper.get("[data-test-popout]").text()).toBe("kitchen");
     wrapper.unmount();
   });

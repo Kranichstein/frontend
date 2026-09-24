@@ -57,3 +57,34 @@ describe("FrameScheduler", () => {
     expect(scheduler.pickAt(5000)).toBeNull();
   });
 });
+
+describe("FrameScheduler.pickRecentAt", () => {
+  it("returns nothing while no frame is due", () => {
+    const scheduler = new FrameScheduler();
+    scheduler.push(frame(1000));
+    expect(scheduler.pickRecentAt(999, 4)).toEqual([]);
+  });
+
+  it("returns the newest due frames oldest first, keeping them for the next pick", () => {
+    const scheduler = new FrameScheduler();
+    for (const ts of [1000, 2000, 3000, 4000, 5000, 6000]) {
+      scheduler.push(frame(ts));
+    }
+    const picked = scheduler.pickRecentAt(5500, 3);
+    expect(picked.map((f) => f.timestampUs)).toEqual([3000, 4000, 5000]);
+    // 1000 and 2000 dropped; the window and the future frame remain
+    expect(scheduler.size).toBe(4);
+    expect(scheduler.pickRecentAt(6000, 3).map((f) => f.timestampUs)).toEqual([
+      4000, 5000, 6000,
+    ]);
+  });
+
+  it("returns fewer frames than asked while the buffer is still filling", () => {
+    const scheduler = new FrameScheduler();
+    scheduler.push(frame(1000));
+    scheduler.push(frame(2000));
+    expect(scheduler.pickRecentAt(2000, 4).map((f) => f.timestampUs)).toEqual([
+      1000, 2000,
+    ]);
+  });
+});

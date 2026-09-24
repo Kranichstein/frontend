@@ -768,8 +768,8 @@
         "protocol_native_badge": "Native",
         "visualizer_description": "Quality, presets and favorites for the MilkDrop music visualizer",
         "visualizer_enabled": {
-            "label": "MilkDrop visualizer",
-            "description": "Show a MilkDrop visualizer behind the fullscreen player, reacting live to the music. Each player can override this from its fullscreen menu. The waveform is tapped from the Sendspin stream, so it is only offered for players with a Sendspin output."
+            "label": "Visualizer",
+            "description": "Show a visualizer behind the fullscreen player, reacting live to the music: MilkDrop presets or an LED spectrum analyzer. Each player can override this from its fullscreen menu. The waveform is tapped from the Sendspin stream, so it is only offered for players with a Sendspin output."
         },
         "visualizer_blur": {
             "label": "Visualizer blur",
@@ -2478,6 +2478,13 @@
     "mark_played_partial_failure": "Could not update {0} episode(s)",
     "visualizer": {
         "title": "MilkDrop",
+        "mode": "Visualizer mode",
+        "delay": "Delay (for audio latency on the device)",
+        "mode_options": {
+            "off": "Off",
+            "milkdrop": "MilkDrop",
+            "spectrum": "Spectrum"
+        },
         "enabled": "Enabled",
         "preset_random": "Random preset",
         "toggle": "Toggle the MilkDrop visualizer",

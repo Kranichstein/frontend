@@ -1,6 +1,7 @@
 <!--
-  Visualizer popout for the player overflow menus: per-player on/off switch,
-  preset picker, blur and opacity sliders; persisted as user preferences.
+  Visualizer popout for the player overflow menus: per-player mode (off /
+  MilkDrop / spectrum), MilkDrop preset picker, blur and opacity sliders;
+  persisted as user preferences.
 -->
 <template>
   <div ref="menuEl" class="visualizer-menu" @pointerdown.stop @click.stop>
@@ -10,11 +11,24 @@
         class="visualizer-menu__icon"
         :fill="enabledPref ? 'currentColor' : 'none'"
       />
-      <span class="visualizer-menu__label">{{ $t("visualizer.enabled") }}</span>
-      <Switch
-        :model-value="enabledPref"
-        @update:model-value="toggleVisualizer"
-      />
+      <div
+        class="visualizer-menu__modes"
+        role="radiogroup"
+        :aria-label="$t('visualizer.mode')"
+      >
+        <button
+          v-for="option in VISUALIZER_MODES"
+          :key="option"
+          type="button"
+          role="radio"
+          class="visualizer-menu__mode"
+          :class="{ 'visualizer-menu__mode--active': modePref === option }"
+          :aria-checked="modePref === option"
+          @click="setVisualizerMode(option)"
+        >
+          {{ $t(`visualizer.mode_options.${option}`) }}
+        </button>
+      </div>
     </div>
     <div class="visualizer-menu__row">
       <Focus :size="20" class="visualizer-menu__icon" />
@@ -42,8 +56,24 @@
       />
       <span class="visualizer-menu__value">{{ opacityDraft }}%</span>
     </div>
-    <!-- preset packs only load while enabled, so the list would be empty -->
-    <template v-if="enabledPref">
+    <!-- holds the picture back for output latency on the listening device -->
+    <div class="visualizer-menu__row" :title="$t('visualizer.delay')">
+      <Timer :size="20" class="visualizer-menu__icon" />
+      <Slider
+        :model-value="[delayDraft]"
+        :min="0"
+        :max="VISUALIZER_DELAY_MAX_MS"
+        :step="10"
+        :aria-label="$t('visualizer.delay')"
+        class="visualizer-menu__slider"
+        @update:model-value="onDelayChange"
+        @value-commit="onDelayCommit"
+      />
+      <span class="visualizer-menu__value">{{ delayDraft }} ms</span>
+    </div>
+    <!-- presets are MilkDrop's; the packs only load in that mode, so the list
+         would be empty otherwise -->
+    <template v-if="modePref === 'milkdrop'">
       <DropdownMenuSeparator />
       <!-- header folds the list; the star acts on the showing preset without
            toggling the fold -->
@@ -128,17 +158,19 @@ import {
   Focus,
   Star,
   SwatchBook,
+  Timer,
 } from "@lucide/vue";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { useUserPreferences } from "@/composables/userPreferences";
 import {
   currentVisualizerPreset,
   VISUALIZER_BLUR_DEFAULT,
+  VISUALIZER_DELAY_MAX_MS,
+  VISUALIZER_MODES,
   VISUALIZER_OPACITY_DEFAULT,
 } from "@/composables/visualizer/state";
 import { useVisualizer } from "@/composables/visualizer/useVisualizer";
@@ -156,9 +188,13 @@ const props = defineProps<{
 }>();
 
 const { getPreference, setPreference } = useUserPreferences();
-const { visualizerEnabledPref: enabledPref, toggleVisualizer } = useVisualizer(
-  () => props.playerId || store.activePlayer?.player_id,
-);
+const {
+  visualizerEnabledPref: enabledPref,
+  visualizerMode: modePref,
+  visualizerDelay: delayPref,
+  setVisualizerMode,
+  setVisualizerDelay,
+} = useVisualizer(() => props.playerId || store.activePlayer?.player_id);
 const presetPref = getPreference("visualizer_preset", "");
 const blurPref = getPreference("visualizer_blur", VISUALIZER_BLUR_DEFAULT);
 const opacityPref = getPreference(
@@ -228,11 +264,11 @@ const toggleFavorite = () => {
 };
 
 // Loading the names pulls in the multi-megabyte preset packs, so defer it until
-// the visualizer is actually enabled rather than on every menu open.
+// MilkDrop is actually on rather than on every menu open.
 watch(
-  enabledPref,
-  async (enabled) => {
-    if (enabled && presetNames.value.length === 0)
+  modePref,
+  async (mode) => {
+    if (mode === "milkdrop" && presetNames.value.length === 0)
       presetNames.value = await listPresetNames();
   },
   { immediate: true },
@@ -299,6 +335,18 @@ const onOpacityChange = (value: number[] | undefined) => {
   opacityDraft.value = value[0] ?? VISUALIZER_OPACITY_DEFAULT;
 };
 
+const delayDraft = ref(delayPref.value);
+watch(delayPref, (value) => (delayDraft.value = value));
+
+const onDelayChange = (value: number[] | undefined) => {
+  if (!value) return;
+  delayDraft.value = value[0] ?? 0;
+};
+
+const onDelayCommit = (value: number[]) => {
+  setVisualizerDelay(value[0] ?? 0);
+};
+
 const onOpacityCommit = (value: number[]) => {
   void setPreference(
     "visualizer_opacity",
@@ -334,8 +382,36 @@ const onOpacityCommit = (value: number[]) => {
   flex: 0 0 auto;
 }
 
-.visualizer-menu__label {
+.visualizer-menu__modes {
   flex: 1 1 auto;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--muted);
+}
+
+.visualizer-menu__mode {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.12s ease;
+}
+
+.visualizer-menu__mode:hover {
+  background: var(--accent);
+}
+
+.visualizer-menu__mode--active,
+.visualizer-menu__mode--active:hover {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 500;
 }
 
 .visualizer-menu__star {

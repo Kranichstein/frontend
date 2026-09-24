@@ -10,7 +10,12 @@
 
 import { parseVisualizerBinary } from "@/helpers/visualizer/binaryFrames";
 import { FrameScheduler } from "@/helpers/visualizer/frameScheduler";
+import {
+  DEFAULT_SAMPLE_RATE,
+  snapSampleRate,
+} from "@/helpers/visualizer/spectrum";
 import { ClockSync, computeTimeSample } from "@/helpers/visualizer/timeSync";
+import type { VisualizerStyle } from "@/composables/visualizer/state";
 import { isVisualizerSupported } from "@/composables/visualizer/useVisualizerEngine";
 import api from "@/plugins/api";
 import { authManager } from "@/plugins/auth";
@@ -46,6 +51,16 @@ const isRgbTuple = (value: unknown): value is [number, number, number] =>
   value.length === 3 &&
   value.every((channel) => Number.isFinite(channel));
 
+/**
+ * Back-to-back waveform frames (oldest first) and the sample rate they carry.
+ */
+export interface SampleWindow {
+  frames: Uint8Array[];
+  sampleRate: number;
+  // timestamp of the newest frame; unchanged while no new frame is due
+  newestTimestampUs: number;
+}
+
 export interface VisualizerRelayCallbacks {
   onState?: (state: RelayState) => void;
   onDownbeat?: (timestampUs: number) => void;
@@ -70,16 +85,19 @@ export function visualizerProviderAvailable(): boolean {
 }
 
 /**
- * Whether this session can actually render the visualizer.
+ * Whether this session can actually render the visualizer in the given style.
  *
- * The plugin being available is not enough: the canvas needs WebGL2, and a
- * remote (WebRTC) session cannot reach the relay route at all. Views gate their
- * "visualizer is on" state on this so the dark-palette / album-art-swap styling
- * is never applied over a canvas that stays transparent.
+ * The plugin being available is not enough: MilkDrop needs WebGL2 (the
+ * spectrum only a 2D canvas), and a remote (WebRTC) session cannot reach the
+ * relay route at all. Views gate their "visualizer is on" state on this so the
+ * dark-palette / album-art-swap styling is never applied over a canvas that
+ * stays transparent.
  */
-export function visualizerCanRender(): boolean {
+export function visualizerCanRender(
+  style: VisualizerStyle = "milkdrop",
+): boolean {
   if (api.isRemoteConnection.value) return false;
-  return isVisualizerSupported();
+  return style === "spectrum" || isVisualizerSupported();
 }
 
 export class VisualizerRelayClient {
@@ -93,6 +111,8 @@ export class VisualizerRelayClient {
   private pendingBeats: number[] = [];
   private state: RelayState = "connecting";
   private colorPalette: ColorPalette = {};
+  private sampleRate = DEFAULT_SAMPLE_RATE;
+  private lastWaveTimestampUs: number | null = null;
 
   constructor(
     private readonly callbacks: VisualizerRelayCallbacks = {},
@@ -107,12 +127,40 @@ export class VisualizerRelayClient {
   /**
    * The waveform frame that belongs to "now", or null while unsynchronized
    * or starved. Call once per animation tick.
+   *
+   * @param delayUs - how much later than scheduled the audio is actually
+   *   heard on the listening device (output latency the server can't see).
    */
-  currentFrame(): Uint8Array | null {
+  currentFrame(delayUs = 0): Uint8Array | null {
     const offset = this.clock.offsetUs;
     if (offset === null) return null;
-    const serverNowUs = this.clientNowUs() + offset;
+    const serverNowUs = this.clientNowUs() + offset - delayUs;
     return this.scheduler.pickAt(serverNowUs)?.samples ?? null;
+  }
+
+  /**
+   * Up to `frameCount` back-to-back waveform frames for "now", or null while
+   * unsynchronized or starved. Call once per animation tick; do not mix with
+   * currentFrame on the same client.
+   *
+   * The span reaches a quarter of itself past "now": that is where a Hann
+   * window weighs samples at half, so a hit lights up as it is heard rather
+   * than when it first creeps into the window's faded edge.
+   *
+   * @param delayUs - as for currentFrame.
+   */
+  currentWindow(frameCount: number, delayUs = 0): SampleWindow | null {
+    const offset = this.clock.offsetUs;
+    if (offset === null) return null;
+    const spanUs = ((frameCount * N_SAMPLES) / this.sampleRate) * 1_000_000;
+    const serverNowUs = this.clientNowUs() + offset - delayUs + spanUs / 4;
+    const picked = this.scheduler.pickRecentAt(serverNowUs, frameCount);
+    if (picked.length === 0) return null;
+    return {
+      frames: picked.map((frame) => frame.samples),
+      sampleRate: this.sampleRate,
+      newestTimestampUs: picked[picked.length - 1].timestampUs,
+    };
   }
 
   close(): void {
@@ -170,6 +218,7 @@ export class VisualizerRelayClient {
       this.clearBeatTimers();
       this.clock.clear();
       this.scheduler.clear();
+      this.lastWaveTimestampUs = null;
       // No onColor: the canvas keeps its tint across a reconnect on purpose;
       // stream/start clears it when the server no longer serves color.
       this.colorPalette = {};
@@ -262,6 +311,7 @@ export class VisualizerRelayClient {
       ) {
         // Color is not reset here: stream/clear also fires on a plain seek.
         this.scheduler.clear();
+        this.lastWaveTimestampUs = null;
         this.clearBeatTimers();
       } else if (message.type === "error") {
         console.warn("[visualizer] relay error:", message.message);
@@ -272,6 +322,7 @@ export class VisualizerRelayClient {
     const frame = parseVisualizerBinary(event.data as ArrayBuffer, N_SAMPLES);
     if (!frame) return;
     if (frame.kind === "waveform") {
+      this.trackSampleRate(frame.timestampUs);
       this.scheduler.push({
         timestampUs: frame.timestampUs,
         samples: frame.samples,
@@ -280,6 +331,19 @@ export class VisualizerRelayClient {
     } else if (frame.isDownbeat) {
       this.scheduleDownbeat(frame.timestampUs);
     }
+  }
+
+  // The relay cuts the source PCM into back-to-back N_SAMPLES windows, so two
+  // consecutive frame stamps lie N_SAMPLES / sampleRate apart. Gaps (seeks,
+  // reordering) fail to snap to a common rate and keep the last estimate.
+  private trackSampleRate(timestampUs: number): void {
+    const previous = this.lastWaveTimestampUs;
+    this.lastWaveTimestampUs = timestampUs;
+    if (previous === null || timestampUs <= previous) return;
+    const rate = snapSampleRate(
+      N_SAMPLES / ((timestampUs - previous) / 1_000_000),
+    );
+    if (rate !== null) this.sampleRate = rate;
   }
 
   private startTimeSync(ws: WebSocket): void {

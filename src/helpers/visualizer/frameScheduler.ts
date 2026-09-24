@@ -67,6 +67,24 @@ export class FrameScheduler {
     return picked;
   }
 
+  /**
+   * Return up to `count` of the newest frames at or before `serverNowUs`,
+   * oldest first, and drop everything older than them. Empty when no frame
+   * is due yet. For consumers that analyze a window spanning several frames.
+   */
+  pickRecentAt(serverNowUs: number, count: number): ScheduledFrame[] {
+    let due = 0;
+    while (
+      due < this.frames.length &&
+      this.frames[due].timestampUs <= serverNowUs
+    ) {
+      due += 1;
+    }
+    const start = Math.max(0, due - count);
+    if (start > 0) this.frames.splice(0, start);
+    return this.frames.slice(0, due - start);
+  }
+
   clear(): void {
     this.frames = [];
   }

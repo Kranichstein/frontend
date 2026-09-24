@@ -3,6 +3,8 @@
     <!-- MilkDrop visualizer takes over the backdrop when enabled -->
     <VisualizerCanvas
       v-if="visualizerActive"
+      :mode="visualizerStyle"
+      :delay-ms="visualizerDelay"
       :preset="visualizerPresetPref"
       :blur="visualizerBlurPref"
       :opacity="visualizerOpacityPref"
@@ -538,6 +540,8 @@ const useAlbumArtBackground = computed(() => true);
 
 const {
   visualizerEnabledPref,
+  visualizerStyle,
+  visualizerDelay,
   visualizerPresetPref,
   visualizerBlurPref,
   visualizerOpacityPref,

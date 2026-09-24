@@ -2,6 +2,8 @@
   <div class="now-playing-view" :style="{ background: backgroundGradient }">
     <VisualizerCanvas
       v-if="visualizerActive"
+      :mode="visualizerStyle"
+      :delay-ms="visualizerDelay"
       :preset="visualizerPresetPref"
       :blur="visualizerBlurPref"
       :opacity="visualizerOpacityPref"
@@ -99,6 +101,8 @@ const artworkUrl = computed(
 );
 
 const {
+  visualizerStyle,
+  visualizerDelay,
   visualizerPresetPref,
   visualizerBlurPref,
   visualizerOpacityPref,
