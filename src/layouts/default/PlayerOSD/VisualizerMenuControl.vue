@@ -56,8 +56,12 @@
       />
       <span class="visualizer-menu__value">{{ opacityDraft }}%</span>
     </div>
-    <!-- holds the picture back for output latency on the listening device -->
-    <div class="visualizer-menu__row" :title="$t('visualizer.delay')">
+    <!-- holds the spectrum back for output latency on the listening device -->
+    <div
+      v-if="modePref === 'spectrum'"
+      class="visualizer-menu__row"
+      :title="$t('visualizer.delay')"
+    >
       <Timer :size="20" class="visualizer-menu__icon" />
       <Slider
         :model-value="[delayDraft]"

@@ -77,7 +77,8 @@ const props = withDefaults(
   defineProps<{
     // what to draw: MilkDrop presets, or the LED spectrum
     mode?: VisualizerStyle;
-    // hold the picture back this many ms (output latency on the listener)
+    // hold the spectrum back this many ms (output latency on the listener);
+    // MilkDrop ignores it, its menu offers no delay slider
     delayMs?: number;
     // preset name; empty string = random pick
     preset?: string;
@@ -322,7 +323,7 @@ const createEngine = async () => {
           )
         : await createVisualizerEngine(
             canvasRef.value,
-            () => (relay ? relay.currentFrame(delayUs()) : null),
+            () => (relay ? relay.currentFrame() : null),
             qualityPref.value,
           );
   } catch (error) {
