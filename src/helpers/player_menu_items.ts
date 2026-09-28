@@ -17,10 +17,13 @@ import { resolveExternalSource } from "@/composables/externalSource";
 import { resolveActiveSourceId } from "@/composables/activeSource";
 import { useAnnouncement } from "@/composables/useAnnouncement";
 import { useAudioOverlay } from "@/composables/useAudioOverlay";
-import { visualizerProviderAvailable } from "@/plugins/visualizer-relay";
-import { visualizerEnabledForPlayer } from "@/composables/visualizer/useVisualizer";
+import { getVisualizer } from "@/composables/visualizer/registry";
+import {
+  activeVisualizerForPlayer,
+  anyVisualizerAvailable,
+} from "@/composables/visualizer/useVisualizer";
 import VisualizerMenuControl from "@/layouts/default/PlayerOSD/VisualizerMenuControl.vue";
-import { Droplet, Megaphone, Sparkles } from "@lucide/vue";
+import { Megaphone, MonitorPlay, Sparkles } from "@lucide/vue";
 import { h, markRaw } from "vue";
 import { useHosts } from "@/composables/ai-radio/useHosts";
 import { useShows } from "@/composables/ai-radio/useShows";
@@ -379,19 +382,18 @@ export const getPlayerMenuItems = (
     });
   }
 
-  // MilkDrop visualizer popout (both menus), kept just above the settings
-  // entry; the droplet fills while enabled for this player (live, since the
-  // enabled preference is reactive store state)
-  if (visualizerProviderAvailable()) {
+  // Visualizer popout (both menus), kept just above the settings entry; the
+  // icon is the active visualizer's while one is on for this player (live,
+  // since the choice is reactive store state)
+  if (anyVisualizerAvailable()) {
     menuItems.push({
       label: "settings.visualizer_enabled.label",
-      icon: markRaw(() =>
-        h(Droplet, {
-          fill: visualizerEnabledForPlayer(player.player_id)
-            ? "currentColor"
-            : "none",
-        }),
-      ),
+      icon: markRaw(() => {
+        const active = activeVisualizerForPlayer(player.player_id);
+        return active
+          ? h(getVisualizer(active).icon, { class: "text-primary" })
+          : h(MonitorPlay);
+      }),
       subComponent: markRaw(VisualizerMenuControl),
       componentProps: { playerId: player.player_id },
     });

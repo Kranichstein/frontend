@@ -6,6 +6,7 @@ import { Scope } from "@/plugins/api/interfaces";
 import { authManager } from "@/plugins/auth";
 import { store } from "@/plugins/store";
 import {
+  AudioLines,
   BookAudio,
   Compass,
   Disc3,
@@ -210,6 +211,16 @@ const MENU_ITEM_REGISTRY: MenuItemDefinition[] = [
     label: "visualizer.title",
     icon: Droplet,
     path: "/visualizer",
+    isLibraryNode: false,
+    group: "plugins",
+    available: () => store.enabledPlugins.has("milkdrop_visualizer"),
+  },
+  {
+    // frontend-only visualizer, fed by the MilkDrop plugin's relay
+    id: "spectrum_visualizer",
+    label: "spectrum.title",
+    icon: AudioLines,
+    path: "/spectrum",
     isLibraryNode: false,
     group: "plugins",
     available: () => store.enabledPlugins.has("milkdrop_visualizer"),

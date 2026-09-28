@@ -1,477 +1,148 @@
 <!--
-  Visualizer popout for the player overflow menus: per-player mode (off /
-  MilkDrop / spectrum), MilkDrop preset picker, blur and opacity sliders;
-  persisted as user preferences.
+  Visualizer popout for the player overflow menus: one row per available
+  visualizer (see composables/visualizer/registry.ts), each with its on/off
+  switch for this player; at most one is on, so switching one on switches the
+  other off. Tapping a row unfolds that visualizer's own settings below it.
 -->
 <template>
-  <div ref="menuEl" class="visualizer-menu" @pointerdown.stop @click.stop>
-    <div class="visualizer-menu__row">
-      <Droplet
-        :size="20"
-        class="visualizer-menu__icon"
-        :fill="enabledPref ? 'currentColor' : 'none'"
-      />
-      <div
-        class="visualizer-menu__modes"
-        role="radiogroup"
-        :aria-label="$t('visualizer.mode')"
-      >
-        <button
-          v-for="option in VISUALIZER_MODES"
-          :key="option"
-          type="button"
-          role="radio"
-          class="visualizer-menu__mode"
-          :class="{ 'visualizer-menu__mode--active': modePref === option }"
-          :aria-checked="modePref === option"
-          @click="setVisualizerMode(option)"
-        >
-          {{ $t(`visualizer.mode_options.${option}`) }}
-        </button>
-      </div>
-    </div>
-    <div class="visualizer-menu__row">
-      <Focus :size="20" class="visualizer-menu__icon" />
-      <Slider
-        :model-value="[blurDraft]"
-        :min="0"
-        :max="30"
-        :step="1"
-        class="visualizer-menu__slider"
-        @update:model-value="onBlurChange"
-        @value-commit="onBlurCommit"
-      />
-      <span class="visualizer-menu__value">{{ blurDraft }}px</span>
-    </div>
-    <div class="visualizer-menu__row">
-      <Contrast :size="20" class="visualizer-menu__icon" />
-      <Slider
-        :model-value="[opacityDraft]"
-        :min="10"
-        :max="100"
-        :step="5"
-        class="visualizer-menu__slider"
-        @update:model-value="onOpacityChange"
-        @value-commit="onOpacityCommit"
-      />
-      <span class="visualizer-menu__value">{{ opacityDraft }}%</span>
-    </div>
-    <!-- holds the spectrum back for output latency on the listening device -->
+  <div class="visualizer-list" @pointerdown.stop @click.stop>
     <div
-      v-if="modePref === 'spectrum'"
-      class="visualizer-menu__row"
-      :title="$t('visualizer.delay')"
+      v-for="entry in entries"
+      :key="entry.id"
+      class="visualizer-list__item"
+      :class="{ 'visualizer-list__item--open': expanded === entry.id }"
     >
-      <Timer :size="20" class="visualizer-menu__icon" />
-      <Slider
-        :model-value="[delayDraft]"
-        :min="0"
-        :max="VISUALIZER_DELAY_MAX_MS"
-        :step="10"
-        :aria-label="$t('visualizer.delay')"
-        class="visualizer-menu__slider"
-        @update:model-value="onDelayChange"
-        @value-commit="onDelayCommit"
-      />
-      <span class="visualizer-menu__value">{{ delayDraft }} ms</span>
-    </div>
-    <!-- presets are MilkDrop's; the packs only load in that mode, so the list
-         would be empty otherwise -->
-    <template v-if="modePref === 'milkdrop'">
-      <DropdownMenuSeparator />
-      <!-- header folds the list; the star acts on the showing preset without
-           toggling the fold -->
       <div
-        class="visualizer-menu__row visualizer-menu__preset-header"
+        class="visualizer-list__row"
         role="button"
-        :aria-expanded="presetsExpanded"
-        @click="toggleExpanded"
+        :aria-expanded="expanded === entry.id"
+        @click="toggleExpanded(entry.id)"
       >
-        <SwatchBook :size="20" class="visualizer-menu__icon" />
-        <span class="visualizer-menu__preset-label">{{ showingLabel }}</span>
-        <button
-          type="button"
-          class="visualizer-menu__star"
-          :class="{ 'visualizer-menu__star--active': showingIsFavorite }"
-          :aria-label="$t('visualizer.toggle_favorite')"
-          @click.stop="toggleFavorite"
-        >
-          <Star
-            :size="18"
-            :fill="showingIsFavorite ? 'currentColor' : 'none'"
+        <component
+          :is="entry.icon"
+          :size="20"
+          class="visualizer-list__icon"
+          :class="{ 'visualizer-list__icon--active': active === entry.id }"
+        />
+        <span class="visualizer-list__label">{{ $t(entry.label) }}</span>
+        <!-- the switch must not also fold the row -->
+        <span @click.stop>
+          <Switch
+            :model-value="active === entry.id"
+            :disabled="!entry.canRender()"
+            :aria-label="$t(entry.label)"
+            @update:model-value="(on: boolean) => onSwitch(entry.id, on)"
           />
-        </button>
+        </span>
         <ChevronDown
           :size="18"
-          class="visualizer-menu__chevron"
-          :class="{ 'visualizer-menu__chevron--open': presetsExpanded }"
+          class="visualizer-list__chevron"
+          :class="{ 'visualizer-list__chevron--open': expanded === entry.id }"
         />
       </div>
-      <!-- inline list (like the AI DJ submenu); the only scrolling part, the
-           rows above stay as a static header -->
-      <div
-        v-if="presetsExpanded"
-        class="visualizer-menu__list"
-        :style="
-          listMaxHeight !== null
-            ? { maxHeight: `${listMaxHeight}px` }
-            : undefined
-        "
-      >
-        <DropdownMenuItem @select.prevent="onPresetChange(RANDOM_VALUE)">
-          <span class="flex-1 truncate min-w-0">
-            {{ $t("visualizer.preset_random") }}
-          </span>
-          <Check v-if="selectValue === RANDOM_VALUE" class="ml-auto size-4" />
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          v-if="favoritesPref.length > 0"
-          @select.prevent="onPresetChange(RANDOM_FAVORITES_VALUE)"
-        >
-          <span class="flex-1 truncate min-w-0">
-            {{ $t("visualizer.preset_random_favorites") }}
-          </span>
-          <Check
-            v-if="selectValue === RANDOM_FAVORITES_VALUE"
-            class="ml-auto size-4"
-          />
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          v-for="name in sortedPresetNames"
-          :key="name"
-          @select.prevent="onPresetChange(name)"
-        >
-          <span class="flex-1 truncate min-w-0">
-            {{ favoritesPref.includes(name) ? `★ ${name}` : name }}
-          </span>
-          <Check v-if="selectValue === name" class="ml-auto size-4" />
-        </DropdownMenuItem>
-      </div>
-    </template>
+      <component
+        :is="entry.menu"
+        v-if="expanded === entry.id"
+        :player-id="resolvedPlayerId"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import {
-  Check,
-  ChevronDown,
-  Contrast,
-  Droplet,
-  Focus,
-  Star,
-  SwatchBook,
-  Timer,
-} from "@lucide/vue";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { Slider } from "@/components/ui/slider";
-import { useUserPreferences } from "@/composables/userPreferences";
-import {
-  currentVisualizerPreset,
-  VISUALIZER_BLUR_DEFAULT,
-  VISUALIZER_DELAY_MAX_MS,
-  VISUALIZER_MODES,
-  VISUALIZER_OPACITY_DEFAULT,
-} from "@/composables/visualizer/state";
+import { computed, ref } from "vue";
+import { ChevronDown } from "@lucide/vue";
+import { Switch } from "@/components/ui/switch";
+import { availableVisualizers } from "@/composables/visualizer/registry";
+import type { VisualizerId } from "@/composables/visualizer/state";
 import { useVisualizer } from "@/composables/visualizer/useVisualizer";
-import { listPresetNames } from "@/helpers/visualizer/presetLibrary";
-import { $t } from "@/plugins/i18n";
 import { store } from "@/plugins/store";
 
-// Sentinels so the random modes can't collide with real preset names.
-const RANDOM_VALUE = "__random__";
-const RANDOM_FAVORITES_VALUE = "__random_favorites__";
-
 const props = defineProps<{
-  // player whose on/off switch this controls; defaults to the active player
+  // player whose visualizer this controls; defaults to the active player
   playerId?: string;
 }>();
 
-const { getPreference, setPreference } = useUserPreferences();
-const {
-  visualizerEnabledPref: enabledPref,
-  visualizerMode: modePref,
-  visualizerDelay: delayPref,
-  setVisualizerMode,
-  setVisualizerDelay,
-} = useVisualizer(() => props.playerId || store.activePlayer?.player_id);
-const presetPref = getPreference("visualizer_preset", "");
-const blurPref = getPreference("visualizer_blur", VISUALIZER_BLUR_DEFAULT);
-const opacityPref = getPreference(
-  "visualizer_opacity",
-  VISUALIZER_OPACITY_DEFAULT,
-);
-const favoritesPref = getPreference<string[]>("visualizer_favorites", []);
-const presetModePref = getPreference<string>(
-  "visualizer_preset_mode",
-  "random",
+const resolvedPlayerId = computed(
+  () => props.playerId || store.activePlayer?.player_id,
 );
 
-const presetNames = ref<string[]>([]);
+const { activeVisualizer: active, setActiveVisualizer } = useVisualizer(
+  () => resolvedPlayerId.value,
+);
 
-// Folded by default so the popout stays compact; per menu open, not persisted.
-const presetsExpanded = ref(false);
-const menuEl = ref<HTMLElement | null>(null);
-const listMaxHeight = ref<number | null>(null);
+const entries = computed(() => availableVisualizers());
 
-// Cap the list to the free space below the popout, measured when expanding.
-// The popper's available-height allows for relocating the popout, so growing
-// to it makes the whole popout visibly jump (mainly on phones); growing only
-// into the space that is really free below never triggers a reposition. The
-// small floor keeps the fold usable when the popout sits near the bottom, at
-// the cost of a shift of at most that amount in that rare case.
-const toggleExpanded = () => {
-  if (!presetsExpanded.value && menuEl.value) {
-    const panel =
-      menuEl.value.closest("[data-slot='dropdown-menu-sub-content']") ??
-      menuEl.value;
-    const free = window.innerHeight - panel.getBoundingClientRect().bottom - 8;
-    listMaxHeight.value = Math.max(96, free);
+// Opens on the active visualizer's settings; per menu open, not persisted.
+const expanded = ref<VisualizerId | null>(active.value);
+
+const toggleExpanded = (id: VisualizerId) => {
+  expanded.value = expanded.value === id ? null : id;
+};
+
+const onSwitch = (id: VisualizerId, on: boolean) => {
+  if (on) {
+    setActiveVisualizer(id);
+    expanded.value = id;
+  } else if (active.value === id) {
+    setActiveVisualizer(null);
   }
-  presetsExpanded.value = !presetsExpanded.value;
-};
-
-// Favourites float to the top of the picker.
-const sortedPresetNames = computed(() => {
-  const favorites = favoritesPref.value;
-  return [...presetNames.value].sort((a, b) => {
-    const favDiff =
-      Number(favorites.includes(b)) - Number(favorites.includes(a));
-    return favDiff !== 0
-      ? favDiff
-      : a.localeCompare(b, undefined, { sensitivity: "base" });
-  });
-});
-
-// The star acts on whatever preset is currently showing (random modes pick
-// presets the list does not reflect).
-const showingPreset = computed(
-  () => currentVisualizerPreset.value || presetPref.value || null,
-);
-const showingIsFavorite = computed(
-  () =>
-    showingPreset.value !== null &&
-    favoritesPref.value.includes(showingPreset.value),
-);
-
-const toggleFavorite = () => {
-  const name = showingPreset.value;
-  if (!name) return;
-  const favorites = favoritesPref.value.includes(name)
-    ? favoritesPref.value.filter((f) => f !== name)
-    : [...favoritesPref.value, name];
-  void setPreference("visualizer_favorites", favorites);
-};
-
-// Loading the names pulls in the multi-megabyte preset packs, so defer it until
-// MilkDrop is actually on rather than on every menu open.
-watch(
-  modePref,
-  async (mode) => {
-    if (mode === "milkdrop" && presetNames.value.length === 0)
-      presetNames.value = await listPresetNames();
-  },
-  { immediate: true },
-);
-
-// The list reflects and controls the full selection: concrete preset
-// switches to fixed mode; the Random entries switch the mode back.
-const selectValue = computed(() => {
-  if (presetModePref.value === "fixed" && presetPref.value)
-    return presetPref.value;
-  if (presetModePref.value === "random_favorites")
-    return RANDOM_FAVORITES_VALUE;
-  return RANDOM_VALUE;
-});
-
-// The label row shows what is actually on screen right now, marked with ⟳ when
-// that is not the user's own pick. Beat switching overrides fixed mode too, so
-// even a fixed selection can be showing something else.
-const showingLabel = computed(() => {
-  const showing = currentVisualizerPreset.value;
-  if (presetModePref.value === "fixed" && presetPref.value) {
-    return showing && showing !== presetPref.value
-      ? `⟳ ${showing}`
-      : presetPref.value;
-  }
-  if (showing) return `⟳ ${showing}`;
-  return presetModePref.value === "random_favorites"
-    ? $t("visualizer.preset_random_favorites")
-    : $t("visualizer.preset_random");
-});
-
-const onPresetChange = (value: unknown) => {
-  if (value === RANDOM_VALUE) {
-    void setPreference("visualizer_preset_mode", "random");
-    return;
-  }
-  if (value === RANDOM_FAVORITES_VALUE) {
-    void setPreference("visualizer_preset_mode", "random_favorites");
-    return;
-  }
-  void setPreference("visualizer_preset", String(value ?? ""));
-  void setPreference("visualizer_preset_mode", "fixed");
-};
-
-// Track drags locally so the labels stay live; the preference is persisted
-// only on commit (drag end) — every write is a full api.updateUser round-trip
-// that replaces the whole preferences object.
-const blurDraft = ref(blurPref.value);
-watch(blurPref, (value) => (blurDraft.value = value));
-const opacityDraft = ref(opacityPref.value);
-watch(opacityPref, (value) => (opacityDraft.value = value));
-
-const onBlurChange = (value: number[] | undefined) => {
-  if (!value) return;
-  blurDraft.value = value[0] ?? VISUALIZER_BLUR_DEFAULT;
-};
-
-const onBlurCommit = (value: number[]) => {
-  void setPreference("visualizer_blur", value[0] ?? VISUALIZER_BLUR_DEFAULT);
-};
-
-const onOpacityChange = (value: number[] | undefined) => {
-  if (!value) return;
-  opacityDraft.value = value[0] ?? VISUALIZER_OPACITY_DEFAULT;
-};
-
-const delayDraft = ref(delayPref.value);
-watch(delayPref, (value) => (delayDraft.value = value));
-
-const onDelayChange = (value: number[] | undefined) => {
-  if (!value) return;
-  delayDraft.value = value[0] ?? 0;
-};
-
-const onDelayCommit = (value: number[]) => {
-  setVisualizerDelay(value[0] ?? 0);
-};
-
-const onOpacityCommit = (value: number[]) => {
-  void setPreference(
-    "visualizer_opacity",
-    value[0] ?? VISUALIZER_OPACITY_DEFAULT,
-  );
 };
 </script>
 
 <style scoped>
-.visualizer-menu {
+.visualizer-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 2px;
+  padding: 4px;
   font-size: 0.875rem;
   min-width: 260px;
   min-height: 0;
-}
-
-.visualizer-menu__list {
   overflow-y: auto;
-  overflow-x: hidden;
-  min-height: 0;
 }
 
-.visualizer-menu__row {
+.visualizer-list__item + .visualizer-list__item {
+  border-top: 1px solid var(--border);
+  padding-top: 2px;
+}
+
+.visualizer-list__row {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.visualizer-menu__icon {
-  flex: 0 0 auto;
-}
-
-.visualizer-menu__modes {
-  flex: 1 1 auto;
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--muted);
-}
-
-.visualizer-menu__mode {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 4px 6px;
+  padding: 6px 4px;
   border-radius: 6px;
-  font-size: 0.8125rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background-color 0.12s ease;
+  cursor: pointer;
 }
 
-.visualizer-menu__mode:hover {
+.visualizer-list__row:hover {
   background: var(--accent);
 }
 
-.visualizer-menu__mode--active,
-.visualizer-menu__mode--active:hover {
-  background: var(--primary);
-  color: var(--primary-foreground);
+.visualizer-list__icon {
+  flex: 0 0 auto;
+}
+
+.visualizer-list__icon--active {
+  color: var(--primary);
+}
+
+.visualizer-list__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 500;
 }
 
-.visualizer-menu__star {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 6px;
-  color: inherit;
-  flex: 0 0 auto;
-  transition: background-color 0.12s ease;
-}
-
-.visualizer-menu__star:hover {
-  background: var(--accent);
-}
-
-.visualizer-menu__star--active {
-  color: #f5c518;
-}
-
-.visualizer-menu__preset-header {
-  cursor: pointer;
-  border-radius: 6px;
-}
-
-.visualizer-menu__preset-header:hover {
-  background: var(--accent);
-}
-
-.visualizer-menu__chevron {
+.visualizer-list__chevron {
   flex: 0 0 auto;
   transition: transform 0.15s ease;
 }
 
-.visualizer-menu__chevron--open {
+.visualizer-list__chevron--open {
   transform: rotate(180deg);
-}
-
-.visualizer-menu__preset-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-.visualizer-menu__slider {
-  flex: 1 1 auto;
-}
-
-.visualizer-menu__value {
-  min-width: 4ch;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 </style>

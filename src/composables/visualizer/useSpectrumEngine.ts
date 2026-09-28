@@ -2,7 +2,7 @@
  * LED spectrum render engine: a Canvas 2D bar display fed by the same relay
  * waveform frames as MilkDrop. Each tick analyzes the window centred on "now"
  * into 32 log-spaced bands and lights 24 segments per band, green at the
- * bottom, yellow from 60 % and red from 85 % of the height. Bars rise at once
+ * bottom, yellow from 40 % and red from 75 % of the height. Bars rise at once
  * and sink smoothly; each band holds its peak for a moment before it drops.
  *
  * Implements the MilkDrop engine's interface so the hosting canvas can swap
@@ -21,8 +21,9 @@ import type { SampleWindow } from "@/plugins/visualizer-relay";
 export const SPECTRUM_WINDOW_FRAMES = SPECTRUM_FFT_SIZE / 1024;
 
 const SEGMENTS = 24;
-const YELLOW_FROM = 0.6;
-const RED_FROM = 0.85;
+// of 24 segments: 10 green, 8 yellow, 6 red
+const YELLOW_FROM = 0.4;
+const RED_FROM = 0.75;
 const COLORS = {
   green: "#2ee65a",
   yellow: "#ffd60a",
@@ -41,7 +42,7 @@ const MAX_DPR = 2;
 type SegmentColor = keyof typeof COLORS;
 
 function segmentColor(segment: number): SegmentColor {
-  // judged by the segment's centre, so the colour bands land on 60 % / 85 %
+  // judged by the segment's centre, so the colour bands land on 40 % / 75 %
   const height = (segment + 0.5) / SEGMENTS;
   if (height >= RED_FROM) return "red";
   if (height >= YELLOW_FROM) return "yellow";

@@ -2299,15 +2299,18 @@
         "show_selected_player_first": "Das ausgewählten Wiedergabegeräte zuerst anzeigen"
     },
     "mark_played_partial_failure": "Die {0} Folge(n) konnten nicht aktualisiert werden.",
+    "spectrum": {
+        "title": "Spektrum",
+        "description": "Ein LED-Spektrumanalysator hinter dem Vollbildplayer: 32 Bänder von 40 Hz bis 16 kHz, die live auf die Musik reagieren",
+        "relay_missing": "Das Spektrum bezieht seine Daten über das Relay des MilkDrop-Visualizer-Plugins, das nicht verfügbar ist. Installiere es unter Einstellungen → Plugins, um das Spektrum zu nutzen.",
+        "opacity_description": "Wie stark das Spektrum durchscheint; unter 100 % mischt sich der Player-Hintergrund darunter.",
+        "delay_description": "Manche Geräte spielen den Ton später ab, als der Server es plant (Bluetooth, die eigene Verarbeitung eines AirPlay-Empfängers). Dafür hat jedes Wiedergabegerät eine eigene Verzögerung; du stellst sie im Vollbildmenü des Geräts unter Visualizer → Spektrum ein."
+    },
     "visualizer": {
         "title": "MilkDrop",
-        "mode": "Visualizer-Modus",
         "delay": "Verzögerung (für Audio-Latenz am Gerät)",
-        "mode_options": {
-            "off": "Aus",
-            "milkdrop": "MilkDrop",
-            "spectrum": "Spektrum"
-        },
+        "default_enabled": "Standardmäßig anzeigen",
+        "default_enabled_description": "{name} auf allen Wiedergabegeräten anzeigen, die du nicht einzeln über ihr Vollbildmenü eingestellt hast. Es kann immer nur ein Visualizer aktiv sein, dies ersetzt also einen anderen Standard.",
         "preset_random": "Zufällige Voreinstellung",
         "toggle": "Den MilkDrop-Visualizer ein- oder ausschalten",
         "preset_random_favorites": "Zufällige Auswahl aus den Favoriten",

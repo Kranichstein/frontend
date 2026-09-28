@@ -1,5 +1,6 @@
 <!--
-  Visualizer layer: MilkDrop (butterchurn) or the LED spectrum, per `mode`.
+  Visualizer layer: draws whichever visualizer `visualizer` names (see
+  composables/visualizer/registry.ts), MilkDrop (butterchurn) by default.
 
   Renders behind the view content (absolute, z-index 0, no pointer events),
   fed by MA core's visualizer relay. A tint layer recolors toward the track's
@@ -12,16 +13,16 @@
 <template>
   <div class="visualizer-layer" aria-hidden="true" :style="layerStyle">
     <div class="visualizer-layer__stack" :style="stackStyle">
-      <!-- keyed by mode: a canvas that once held a WebGL context can never
-           hand out a 2D one, so each engine gets a fresh element -->
+      <!-- keyed by visualizer: a canvas that once held a WebGL context can
+           never hand out a 2D one, so each engine gets a fresh element -->
       <canvas
-        :key="mode"
+        :key="visualizer"
         ref="canvasRef"
         class="visualizer-layer__canvas"
         :style="canvasStyle"
       ></canvas>
       <div
-        v-if="streaming && mode === 'milkdrop'"
+        v-if="streaming && definition.tintsWithArtwork"
         class="visualizer-layer__tint"
         :style="tintStyle"
       ></div>
@@ -38,21 +39,16 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   ATTACK_MS,
-  createVisualizerEngine,
   DECAY_MS,
   type VisualizerEngine,
-  isVisualizerSupported,
 } from "@/composables/visualizer/useVisualizerEngine";
-import {
-  createSpectrumEngine,
-  SPECTRUM_WINDOW_FRAMES,
-} from "@/composables/visualizer/useSpectrumEngine";
+import { getVisualizer } from "@/composables/visualizer/registry";
 import { useUserPreferences } from "@/composables/userPreferences";
 import {
   currentVisualizerPreset,
   VISUALIZER_BLUR_DEFAULT,
   VISUALIZER_OPACITY_DEFAULT,
-  type VisualizerStyle,
+  type VisualizerId,
 } from "@/composables/visualizer/state";
 import { randomPresetName } from "@/helpers/visualizer/presetLibrary";
 import { DEFAULT_QUALITY } from "@/helpers/visualizer/quality";
@@ -75,10 +71,10 @@ const PAUSED_OPACITY = 0;
 
 const props = withDefaults(
   defineProps<{
-    // what to draw: MilkDrop presets, or the LED spectrum
-    mode?: VisualizerStyle;
-    // hold the spectrum back this many ms (output latency on the listener);
-    // MilkDrop ignores it, its menu offers no delay slider
+    // which visualizer to draw
+    visualizer?: VisualizerId;
+    // hold the picture back this many ms (output latency on the listener);
+    // the host passes 0 for visualizers without a delay setting
     delayMs?: number;
     // preset name; empty string = random pick
     preset?: string;
@@ -97,7 +93,7 @@ const props = withDefaults(
     forceDarkPalette?: boolean;
   }>(),
   {
-    mode: "milkdrop",
+    visualizer: "milkdrop",
     delayMs: 0,
     preset: "",
     blur: VISUALIZER_BLUR_DEFAULT,
@@ -109,6 +105,7 @@ const props = withDefaults(
 );
 
 const canvasRef = ref<HTMLCanvasElement>();
+const definition = computed(() => getVisualizer(props.visualizer));
 const streaming = ref(false);
 const covered = computed(
   () => props.coveredWhenFullscreen && store.showFullscreenPlayer,
@@ -213,8 +210,8 @@ const pickPresetName = async (forceRandom = false): Promise<string | null> => {
 let presetRequestId = 0;
 
 const applyPreset = async (blendSec?: number, forceRandom = false) => {
-  // the spectrum has no presets; nothing for the menu's star to act on
-  if (props.mode !== "milkdrop") {
+  // no presets to pick; nothing for the menu's star to act on
+  if (!definition.value.usesPresets) {
     currentVisualizerPreset.value = null;
     return;
   }
@@ -233,7 +230,7 @@ const applyPreset = async (blendSec?: number, forceRandom = false) => {
 // Preset auto-switch on downbeats (MA's neural beat tracker), rate-limited
 // by the configured minimum dwell time.
 const onDownbeat = () => {
-  if (!beatSwitchPref.value || props.mode !== "milkdrop") return;
+  if (!beatSwitchPref.value || !definition.value.usesPresets) return;
   // Beat schedules are pushed a track ahead and are not cancelled on pause.
   if (playbackPaused.value) return;
   if (performance.now() - lastPresetSwitchAt < beatDwellPref.value * 1000)
@@ -283,12 +280,9 @@ const initialize = async () => {
     // WebGL2 unavailable or init failure: leave the layer transparent. Report it
     // over the relay before closing, so displays with no reachable console (cast
     // receivers, kiosks) still say why they are showing a plain background.
-    const reason =
-      props.mode === "spectrum"
-        ? "spectrum engine failed to start"
-        : isVisualizerSupported()
-          ? "visualizer engine failed to start"
-          : "WebGL2 unavailable in this browser";
+    const reason = definition.value.canRender()
+      ? `${props.visualizer} engine failed to start`
+      : `${props.visualizer} cannot render in this browser`;
     console.warn(`[visualizer] ${reason}, falling back to gradient`);
     relay?.reportError(reason);
     relay?.close();
@@ -314,18 +308,11 @@ const createEngine = async () => {
   engine = null;
   let created: VisualizerEngine | null = null;
   try {
-    created =
-      props.mode === "spectrum"
-        ? createSpectrumEngine(canvasRef.value, () =>
-            relay
-              ? relay.currentWindow(SPECTRUM_WINDOW_FRAMES, delayUs())
-              : null,
-          )
-        : await createVisualizerEngine(
-            canvasRef.value,
-            () => (relay ? relay.currentFrame() : null),
-            qualityPref.value,
-          );
+    created = await definition.value.createEngine(canvasRef.value, {
+      relay: () => relay,
+      delayUs,
+      quality: qualityPref.value,
+    });
   } catch (error) {
     console.error("[visualizer] engine init failed:", error);
   }
@@ -410,16 +397,16 @@ watch(
   () => {
     // Not while covered: the engine is deliberately torn down then, and the
     // uncover path recreates it at the current quality anyway.
-    if (initialized && !covered.value && props.mode === "milkdrop")
+    if (initialized && !covered.value && props.visualizer === "milkdrop")
       void createEngine();
   },
 );
 
-// A mode change swaps the engine outright, after the render that replaced the
-// canvas element. The relay stays: both engines pull from it, just in
-// different shapes.
+// Switching visualizers swaps the engine outright, after the render that
+// replaced the canvas element. The relay stays: every engine pulls from it,
+// just in different shapes.
 watch(
-  () => props.mode,
+  () => props.visualizer,
   () => {
     if (initialized && !covered.value) void createEngine();
   },

@@ -2476,15 +2476,18 @@
         "show_selected_player_first": "Show selected player first"
     },
     "mark_played_partial_failure": "Could not update {0} episode(s)",
+    "spectrum": {
+        "title": "Spectrum",
+        "description": "An LED spectrum analyzer behind the fullscreen player: 32 bands from 40 Hz to 16 kHz, reacting live to the music",
+        "relay_missing": "The spectrum draws from the relay of the MilkDrop Visualizer plugin, which isn't available. Install it under Settings → Plugins to use the spectrum.",
+        "opacity_description": "How strongly the spectrum shows through; below 100 % the player background blends in.",
+        "delay_description": "Some devices play the audio later than the server schedules it (Bluetooth, an AirPlay receiver's own processing). Each player keeps its own delay for that; set it in the player's fullscreen menu under Visualizer → Spectrum."
+    },
     "visualizer": {
         "title": "MilkDrop",
-        "mode": "Visualizer mode",
         "delay": "Delay (for audio latency on the device)",
-        "mode_options": {
-            "off": "Off",
-            "milkdrop": "MilkDrop",
-            "spectrum": "Spectrum"
-        },
+        "default_enabled": "Show by default",
+        "default_enabled_description": "Show {name} on every player you have not set individually from its fullscreen menu. Only one visualizer can be active at a time, so this replaces any other default.",
         "enabled": "Enabled",
         "preset_random": "Random preset",
         "toggle": "Toggle the MilkDrop visualizer",

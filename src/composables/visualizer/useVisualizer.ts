@@ -1,20 +1,16 @@
 /**
- * Shared wiring for views that host a VisualizerCanvas: the user preferences
- * that parameterize it, plus the gating for when the visualizer is actually on.
+ * Shared wiring for views that host a VisualizerCanvas: which visualizer is
+ * active for the shown player, its appearance, and the gating for when it is
+ * actually drawn.
  *
- * The on/off state is per player: an explicit `visualizer_enabled.<player_id>`
- * preference wins, with the plain `visualizer_enabled` preference as the
- * default for players never toggled individually (also the settings-page
- * toggle); that preference itself follows the expert mode until it is set.
- * Toggling from a view therefore only affects the player that view is showing,
- * not every display of the user.
- *
- * What it draws while on (MilkDrop or the LED spectrum) follows the same
- * pattern with `visualizer_style.<player_id>` over `visualizer_style`; the UI
- * offers both as one three-way mode ("off" / "milkdrop" / "spectrum").
- *
- * `visualizer_delay.<player_id>` holds a per-player delay (ms) for output
- * latency the server can't see, such as Bluetooth or a player's sync delay.
+ * At most one visualizer is active per player. Two preferences hold that
+ * choice, each per player with a plain default underneath:
+ * - `visualizer_enabled.<player_id>` over `visualizer_enabled` - whether one is
+ *   on at all; the default follows the expert mode until it is set.
+ * - `visualizer_style.<player_id>` over `visualizer_style` - which one, by id
+ *   (see registry.ts); switching off keeps it, so switching on returns to it.
+ * Choosing from a view therefore only affects the player that view is
+ * showing, not every display of the user.
  */
 
 import { computed, toValue, type MaybeRefOrGetter } from "vue";
@@ -24,23 +20,20 @@ import {
   useUserPreferences,
 } from "@/composables/userPreferences";
 import {
-  isVisualizerStyle,
-  VISUALIZER_BLUR_DEFAULT,
-  VISUALIZER_DELAY_MAX_MS,
-  VISUALIZER_OPACITY_DEFAULT,
-  VISUALIZER_STYLE_DEFAULT,
-  type VisualizerMode,
-  type VisualizerStyle,
+  availableVisualizers,
+  getVisualizer,
+} from "@/composables/visualizer/registry";
+import { spectrumDelayForPlayer } from "@/composables/visualizer/spectrumPreferences";
+import {
+  isVisualizerId,
+  VISUALIZER_DEFAULT_ID,
+  type VisualizerId,
 } from "@/composables/visualizer/state";
 import { expertModeSetting } from "@/helpers/expert_mode";
 import { store } from "@/plugins/store";
-import {
-  visualizerCanRender,
-  visualizerProviderAvailable,
-} from "@/plugins/visualizer-relay";
 
 /**
- * Whether the visualizer is on for this player (standalone: also usable from
+ * Whether a visualizer is on for this player (standalone: also usable from
  * plain functions like the player menu builder). Reads reactive store state,
  * so it stays reactive when called inside a computed.
  */
@@ -53,6 +46,50 @@ export function visualizerEnabledForPlayer(playerId?: string): boolean {
   return expertModeSetting("visualizer_enabled");
 }
 
+/** The visualizer this player shows while switched on. */
+function chosenVisualizerForPlayer(playerId?: string): VisualizerId {
+  const prefs = store.currentUser?.preferences;
+  const override = playerId
+    ? prefs?.[`visualizer_style.${playerId}`]
+    : undefined;
+  if (isVisualizerId(override)) return override;
+  const chosen = prefs?.visualizer_style;
+  return isVisualizerId(chosen) ? chosen : VISUALIZER_DEFAULT_ID;
+}
+
+/**
+ * The visualizer active for this player (or, without an id, the default for
+ * players never set individually), or null when none is. A chosen visualizer
+ * whose server side went missing counts as none.
+ */
+export function activeVisualizerForPlayer(
+  playerId?: string,
+): VisualizerId | null {
+  if (!visualizerEnabledForPlayer(playerId)) return null;
+  const id = chosenVisualizerForPlayer(playerId);
+  return getVisualizer(id).available() ? id : null;
+}
+
+/**
+ * Make `id` the active visualizer for this player (or the default), or
+ * switch visualizers off with null. Both keys go out in one write so the
+ * account never holds half the answer.
+ */
+export function setActiveVisualizerForPlayer(
+  playerId: string | undefined,
+  id: VisualizerId | null,
+): Promise<boolean> {
+  const suffix = playerId ? `.${playerId}` : "";
+  const values: Record<string, unknown> = {
+    [`visualizer_enabled${suffix}`]: id !== null,
+  };
+  if (id !== null) values[`visualizer_style${suffix}`] = id;
+  return setUserPreferences(values);
+}
+
+/**
+ * Flip the visualizer on or off for this player, keeping which one it is.
+ */
 export function toggleVisualizerForPlayer(playerId?: string): void {
   const key = playerId
     ? `visualizer_enabled.${playerId}`
@@ -60,115 +97,57 @@ export function toggleVisualizerForPlayer(playerId?: string): void {
   void setUserPreference(key, !visualizerEnabledForPlayer(playerId));
 }
 
-/**
- * What the visualizer draws for this player while it is on.
- */
-export function visualizerStyleForPlayer(playerId?: string): VisualizerStyle {
-  const prefs = store.currentUser?.preferences;
-  const override = playerId
-    ? prefs?.[`visualizer_style.${playerId}`]
-    : undefined;
-  if (isVisualizerStyle(override)) return override;
-  const style = prefs?.visualizer_style;
-  return isVisualizerStyle(style) ? style : VISUALIZER_STYLE_DEFAULT;
-}
-
-export function visualizerModeForPlayer(playerId?: string): VisualizerMode {
-  return visualizerEnabledForPlayer(playerId)
-    ? visualizerStyleForPlayer(playerId)
-    : "off";
-}
-
-/**
- * Switch this player (or, without an id, the default) to a mode. Switching
- * off keeps the style, so turning it back on returns to the same one. Both
- * keys go out in one write so the account never holds half the answer.
- */
-export function setVisualizerModeForPlayer(
-  playerId: string | undefined,
-  mode: VisualizerMode,
-): Promise<boolean> {
-  const suffix = playerId ? `.${playerId}` : "";
-  const values: Record<string, unknown> = {
-    [`visualizer_enabled${suffix}`]: mode !== "off",
-  };
-  if (mode !== "off") values[`visualizer_style${suffix}`] = mode;
-  return setUserPreferences(values);
-}
-
-/**
- * How many ms to hold the picture back for this player's output latency.
- */
-export function visualizerDelayForPlayer(playerId?: string): number {
-  const prefs = store.currentUser?.preferences;
-  const value = playerId ? prefs?.[`visualizer_delay.${playerId}`] : undefined;
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.min(Math.max(value, 0), VISUALIZER_DELAY_MAX_MS)
-    : 0;
-}
-
-export function setVisualizerDelayForPlayer(
-  playerId: string | undefined,
-  delayMs: number,
-): void {
-  if (!playerId) return;
-  void setUserPreference(`visualizer_delay.${playerId}`, delayMs);
+/** Whether any visualizer can be offered at all (its server side installed). */
+export function anyVisualizerAvailable(): boolean {
+  return availableVisualizers().length > 0;
 }
 
 export function useVisualizer(playerId?: MaybeRefOrGetter<string | undefined>) {
   const { getPreference } = useUserPreferences();
   const visualizerPresetPref = getPreference("visualizer_preset", "");
-  const visualizerBlurPref = getPreference(
-    "visualizer_blur",
-    VISUALIZER_BLUR_DEFAULT,
+
+  const activeVisualizer = computed(() =>
+    activeVisualizerForPlayer(toValue(playerId)),
   );
-  const visualizerOpacityPref = getPreference(
-    "visualizer_opacity",
-    VISUALIZER_OPACITY_DEFAULT,
+  const visualizerEnabledPref = computed(() => activeVisualizer.value !== null);
+  const activeDefinition = computed(() =>
+    activeVisualizer.value ? getVisualizer(activeVisualizer.value) : null,
   );
 
-  const visualizerEnabledPref = computed(() =>
-    visualizerEnabledForPlayer(toValue(playerId)),
+  // Appearance of whichever visualizer is active; each keeps its own.
+  const visualizerBlurPref = computed(
+    () => activeDefinition.value?.blur() ?? 0,
   );
-  const visualizerStyle = computed(() =>
-    visualizerStyleForPlayer(toValue(playerId)),
+  const visualizerOpacityPref = computed(
+    () => activeDefinition.value?.opacity() ?? 0,
   );
   const visualizerDelay = computed(() =>
-    visualizerDelayForPlayer(toValue(playerId)),
-  );
-  const visualizerMode = computed<VisualizerMode>(() =>
-    visualizerEnabledPref.value ? visualizerStyle.value : "off",
+    activeVisualizer.value === "spectrum"
+      ? spectrumDelayForPlayer(toValue(playerId))
+      : 0,
   );
 
-  // The visualizer only exists when the milkdrop_visualizer server plugin is loaded.
-  const visualizerAvailable = computed(() => visualizerProviderAvailable());
+  const visualizerAvailable = computed(() => anyVisualizerAvailable());
 
   // "On" also requires that this session can actually draw it: applying the
   // dark-palette / album-art-swap styling while the canvas stays transparent
-  // (no WebGL2, or a remote session) would break the plain-background fallback.
+  // (no WebGL2 for MilkDrop, or a remote session) would break the
+  // plain-background fallback.
   const visualizerActive = computed(
-    () =>
-      visualizerEnabledPref.value &&
-      visualizerAvailable.value &&
-      visualizerCanRender(visualizerStyle.value),
+    () => activeDefinition.value?.canRender() ?? false,
   );
 
   const toggleVisualizer = () => {
     toggleVisualizerForPlayer(toValue(playerId));
   };
 
-  const setVisualizerMode = (mode: VisualizerMode) => {
-    void setVisualizerModeForPlayer(toValue(playerId), mode);
-  };
-
-  const setVisualizerDelay = (delayMs: number) => {
-    setVisualizerDelayForPlayer(toValue(playerId), delayMs);
+  const setActiveVisualizer = (id: VisualizerId | null) => {
+    void setActiveVisualizerForPlayer(toValue(playerId), id);
   };
 
   return {
+    activeVisualizer,
     visualizerEnabledPref,
-    visualizerStyle,
-    visualizerMode,
     visualizerDelay,
     visualizerPresetPref,
     visualizerBlurPref,
@@ -176,7 +155,6 @@ export function useVisualizer(playerId?: MaybeRefOrGetter<string | undefined>) {
     visualizerAvailable,
     visualizerActive,
     toggleVisualizer,
-    setVisualizerMode,
-    setVisualizerDelay,
+    setActiveVisualizer,
   };
 }

@@ -15,8 +15,6 @@ import {
   snapSampleRate,
 } from "@/helpers/visualizer/spectrum";
 import { ClockSync, computeTimeSample } from "@/helpers/visualizer/timeSync";
-import type { VisualizerStyle } from "@/composables/visualizer/state";
-import { isVisualizerSupported } from "@/composables/visualizer/useVisualizerEngine";
 import api from "@/plugins/api";
 import { authManager } from "@/plugins/auth";
 import { store } from "@/plugins/store";
@@ -78,26 +76,20 @@ function relayUrl(playerQuery?: string): string {
 }
 
 /**
- * Whether the MilkDrop Visualizer server plugin is loaded and available.
+ * Whether the MilkDrop Visualizer server plugin is loaded and available. It
+ * provides the relay, so every visualizer depends on it, not just MilkDrop.
  */
 export function visualizerProviderAvailable(): boolean {
   return store.enabledPlugins.has("milkdrop_visualizer");
 }
 
 /**
- * Whether this session can actually render the visualizer in the given style.
- *
- * The plugin being available is not enough: MilkDrop needs WebGL2 (the
- * spectrum only a 2D canvas), and a remote (WebRTC) session cannot reach the
- * relay route at all. Views gate their "visualizer is on" state on this so the
- * dark-palette / album-art-swap styling is never applied over a canvas that
- * stays transparent.
+ * Whether this session can reach the relay at all. A remote (WebRTC) session
+ * cannot, so no visualizer can draw there; each visualizer adds its own
+ * requirements on top (see registry.ts).
  */
-export function visualizerCanRender(
-  style: VisualizerStyle = "milkdrop",
-): boolean {
-  if (api.isRemoteConnection.value) return false;
-  return style === "spectrum" || isVisualizerSupported();
+export function visualizerRelayReachable(): boolean {
+  return !api.isRemoteConnection.value;
 }
 
 export class VisualizerRelayClient {

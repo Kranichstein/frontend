@@ -118,11 +118,13 @@ describe("getMenuItems (sidebar.menu preference)", () => {
       .filter((item) => item.group === "plugins")
       .map((item) => item.id);
 
+    // the spectrum rides on the MilkDrop plugin's relay, so it comes with it
     expect(pluginIds).toEqual([
       "party",
       "music_quiz",
       "ai_radio",
       "milkdrop_visualizer",
+      "spectrum_visualizer",
     ]);
   });
 
@@ -227,7 +229,12 @@ describe("getMenuItems (sidebar.menu preference)", () => {
       .filter((item) => item.group === "plugins")
       .map((item) => item.id);
 
-    expect(pluginIds).toEqual(["party", "ai_radio", "milkdrop_visualizer"]);
+    expect(pluginIds).toEqual([
+      "party",
+      "ai_radio",
+      "milkdrop_visualizer",
+      "spectrum_visualizer",
+    ]);
   });
 
   it("leaves out AI Radio for a member on API schema 74, where only admins play it", () => {

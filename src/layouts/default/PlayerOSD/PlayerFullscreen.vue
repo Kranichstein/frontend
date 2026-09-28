@@ -17,7 +17,7 @@
     >
       <VisualizerCanvas
         v-if="store.showFullscreenPlayer && visualizerActive"
-        :mode="visualizerStyle"
+        :visualizer="activeVisualizer ?? undefined"
         :delay-ms="visualizerDelay"
         :preset="visualizerPresetPref"
         :blur="visualizerBlurPref"
@@ -887,7 +887,7 @@ watch(
 // Waveform for the current track — loaded centrally by useActiveTrackWaveform.
 const { waveformBins: waveformData } = useActiveTrackWaveform();
 const {
-  visualizerStyle,
+  activeVisualizer,
   visualizerDelay,
   visualizerPresetPref,
   visualizerBlurPref,

@@ -31,6 +31,36 @@ const paramsAndQueryProps = (route: {
   query: Record<string, string | (string | null)[] | null | undefined>;
 }) => ({ ...route.params, ...route.query });
 
+/**
+ * Route guard for the visualizer pages: they need the MilkDrop Visualizer
+ * plugin's relay, and the plugin list is only known once the connection is
+ * up, so wait for that (at most 10 s) before deciding.
+ */
+const requireVisualizerRelay = async () => {
+  if (api.state.value !== ConnectionState.INITIALIZED) {
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        unwatch();
+        resolve();
+      }, 10000);
+      const unwatch = watch(
+        () => api.state.value,
+        (newState) => {
+          if (newState === ConnectionState.INITIALIZED) {
+            clearTimeout(timeout);
+            unwatch();
+            resolve();
+          }
+        },
+        { immediate: true },
+      );
+    });
+  }
+  if (!store.enabledPlugins.has("milkdrop_visualizer")) {
+    return { name: "discover" };
+  }
+};
+
 export const routes: RouteRecordRaw[] = [
   {
     path: "/guest",
@@ -210,30 +240,16 @@ export const routes: RouteRecordRaw[] = [
           import(
             /* webpackChunkName: "visualizersettings" */ "@/views/settings/VisualizerConfig.vue"
           ),
-        beforeEnter: async () => {
-          if (api.state.value !== ConnectionState.INITIALIZED) {
-            await new Promise<void>((resolve) => {
-              const timeout = setTimeout(() => {
-                unwatch();
-                resolve();
-              }, 10000);
-              const unwatch = watch(
-                () => api.state.value,
-                (newState) => {
-                  if (newState === ConnectionState.INITIALIZED) {
-                    clearTimeout(timeout);
-                    unwatch();
-                    resolve();
-                  }
-                },
-                { immediate: true },
-              );
-            });
-          }
-          if (!store.enabledPlugins.has("milkdrop_visualizer")) {
-            return { name: "discover" };
-          }
-        },
+        beforeEnter: requireVisualizerRelay,
+      },
+      {
+        path: "/spectrum",
+        name: "spectrum",
+        component: () =>
+          import(
+            /* webpackChunkName: "spectrumsettings" */ "@/views/settings/SpectrumConfig.vue"
+          ),
+        beforeEnter: requireVisualizerRelay,
       },
       {
         path: "/browse",

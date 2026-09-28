@@ -21,6 +21,8 @@ import {
 const relayConstructor = vi.hoisted(() => vi.fn());
 const relayClose = vi.hoisted(() => vi.fn());
 vi.mock("@/plugins/visualizer-relay", () => ({
+  visualizerProviderAvailable: () => true,
+  visualizerRelayReachable: () => true,
   VisualizerRelayClient: class {
     constructor(...args: unknown[]) {
       relayConstructor(...args);
